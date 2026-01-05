@@ -1,0 +1,148 @@
+{
+  "design_system": {
+    "identity": {
+      "name": "E1 Anti-AI Design System",
+      "archetype": "Organic & Earthy (Education Variant)",
+      "core_values": ["Empathy", "Clarity", "Growth", "Actionable Hope"],
+      "vibe": "Grounded, Tactile, Human-Centric, Data-Rich but Soft"
+    },
+    "typography": {
+      "headings": {
+        "family": "Manrope",
+        "weights": ["600", "800"],
+        "usage": "Use for all H1-H6. Tight tracking (-0.02em).",
+        "import_url": "https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap"
+      },
+      "body": {
+        "family": "IBM Plex Sans",
+        "weights": ["400", "500"],
+        "usage": "Use for paragraphs, data tables, and UI text.",
+        "import_url": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      }
+    },
+    "colors": {
+      "palette": {
+        "background": "#FDFBF7",
+        "foreground": "#1F2937",
+        "primary": "#C05621",
+        "primary_foreground": "#FFFFFF",
+        "secondary": "#475569",
+        "secondary_foreground": "#F8FAFC",
+        "accent": "#F0FDF4",
+        "accent_foreground": "#166534",
+        "muted": "#F3F4F6",
+        "muted_foreground": "#6B7280",
+        "border": "#E5E7EB",
+        "risk_high": "#DC2626",
+        "risk_medium": "#D97706",
+        "risk_low": "#059669"
+      },
+      "tailwind_config_extension": {
+        "colors": {
+          "background": "hsl(var(--background))",
+          "foreground": "hsl(var(--foreground))",
+          "primary": {
+            "DEFAULT": "#C05621",
+            "foreground": "#FFFFFF"
+          },
+          "secondary": {
+            "DEFAULT": "#475569",
+            "foreground": "#F8FAFC"
+          },
+          "risk": {
+            "high": "#DC2626",
+            "medium": "#D97706",
+            "low": "#059669"
+          }
+        }
+      }
+    },
+    "layout": {
+      "spacing_scale": "Generous (2x standard). Use p-8, p-12 for containers.",
+      "grid_system": {
+        "dashboard": "Mode B: Control Room (Dense, Data-Correlated)",
+        "landing": "Mode A: Tetris Grid (Asymmetric, Visual Tension)"
+      },
+      "containers": {
+        "card_style": "bg-white border border-stone-200 shadow-sm rounded-xl hover:shadow-md transition-all duration-300",
+        "dashboard_wrapper": "max-w-[1600px] mx-auto p-6 md:p-10"
+      }
+    },
+    "components": {
+      "buttons": {
+        "style": "Pill-shaped (rounded-full).",
+        "primary": "bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/20",
+        "secondary": "bg-white border border-stone-200 text-stone-700 hover:bg-stone-50"
+      },
+      "cards": {
+        "radius": "rounded-xl",
+        "border": "border border-stone-100",
+        "shadow": "shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+      },
+      "charts": {
+        "library": "Recharts (via Shadcn)",
+        "style": "Minimalist. Remove grid lines where possible. Use soft curves (monotone)."
+      }
+    },
+    "visual_enhancers": {
+      "texture": "Add a subtle noise/grain overlay to the body background to give a 'paper' feel.",
+      "glassmorphism": "Use backdrop-blur-md bg-white/80 for sticky headers and floating panels.",
+      "icons": "Lucide React (Default). Use stroke-width={1.5} for elegance."
+    },
+    "motion": {
+      "library": "framer-motion",
+      "transitions": "Spring-based, soft. No linear ease.",
+      "page_load": "Staggered entrance for dashboard widgets."
+    }
+  },
+  "assets": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1709290749293-c6152a187b14?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwyfHxpbmRpYW4lMjBzY2hvb2wlMjBnaXJsJTIwc3R1ZGVudCUyMHN0dWR5aW5nJTIwY2xhc3Nyb29tfGVufDB8fHx8MTc2NzYyNTI1MHww&ixlib=rb-4.1.0&q=85",
+        "description": "Classroom full of students, authentic and grounded.",
+        "usage": "Landing page hero section, subtle overlay."
+      },
+      {
+        "category": "auth_cover",
+        "url": "https://images.unsplash.com/photo-1682203534176-60f5d99da756?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxpbmRpYW4lMjBzY2hvb2wlMjBnaXJsJTIwc3R1ZGVudCUyMHN0dWR5aW5nJTIwY2xhc3Nyb29tfGVufDB8fHx8MTc2NzYyNTI1MHww&ixlib=rb-4.1.0&q=85",
+        "description": "Girl studying in library, focused.",
+        "usage": "Login/Signup page side panel."
+      },
+      {
+        "category": "feature_intervention",
+        "url": "https://images.unsplash.com/photo-1758685733926-00cba008215b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHx0ZWFjaGVyJTIwaGVscGluZyUyMHN0dWRlbnQlMjBjbGFzc3Jvb218ZW58MHx8fHwxNzY3NjI1MjUxfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Teacher helping student.",
+        "usage": "Intervention tracking feature section."
+      },
+      {
+        "category": "community_impact",
+        "url": "https://images.pexels.com/photos/710743/pexels-photo-710743.jpeg",
+        "description": "Happy group of students.",
+        "usage": "Impact/Success stories section."
+      }
+    ]
+  },
+  "instructions_to_main_agent": {
+    "setup": [
+      "Install fonts: Manrope and IBM Plex Sans.",
+      "Update tailwind.config.js with the custom color palette.",
+      "Install 'framer-motion' and 'recharts' if not present.",
+      "Ensure 'lucide-react' is available."
+    ],
+    "implementation_rules": [
+      "DO NOT use default blue colors. Use the defined Primary (#C05621) and Secondary (#475569).",
+      "DO NOT use 'Inter' font. Use Manrope for headings.",
+      "Create a 'Layout' component that handles the sidebar/header structure for the dashboard.",
+      "Use 'Card' components for all dashboard widgets, but ensure they have the 'rounded-xl' and soft shadow styles.",
+      "For the Risk Dashboard, use the 'Control Room' grid layout.",
+      "Ensure all interactive elements have 'data-testid' attributes."
+    ],
+    "universal_guidelines": [
+      "Avoid generic centered layouts.",
+      "Use glassmorphism for sticky headers.",
+      "Add micro-interactions (hover states) to all buttons and cards.",
+      "Use 'sonner' for toast notifications."
+    ]
+  }
+}
