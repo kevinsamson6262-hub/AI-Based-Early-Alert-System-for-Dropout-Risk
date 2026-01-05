@@ -45,7 +45,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # ===============================
-# Data files
+# Data files (DO NOT COMMIT)
 # ===============================
 *.csv
 *.json
@@ -61,3 +61,8 @@ yarn-error.log*
 # ===============================
 .vercel
 .cache/
+
+# ===============================
+# Temporary / Tooling
+# ===============================
+.emergent/
