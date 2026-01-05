@@ -1,12 +1,8 @@
-# ===============================
-# IDE & Editors
-# ===============================
+# IDE
 .idea/
 .vscode/
 
-# ===============================
-# Environment & Secrets
-# ===============================
+# Environment & secrets
 .env
 frontend/.env
 backend/.env
@@ -14,55 +10,30 @@ serviceAccountKey.json
 *credentials.json*
 *token.json*
 
-# ===============================
-# Node / Frontend
-# ===============================
+# Node
 node_modules/
 frontend/node_modules/
 dist/
 build/
 coverage/
-
-# Lock files
-yarn.lock
-frontend/yarn.lock
 frontend/package-lock.json
+frontend/yarn.lock
+yarn.lock
 
-# ===============================
-# Python / Backend
-# ===============================
+# Python
 __pycache__/
 *.pyc
 *.pkl
 venv/
 .venv/
 
-# ===============================
-# Logs & Debug
-# ===============================
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# ===============================
-# Data files (DO NOT COMMIT)
-# ===============================
+# Data
 *.csv
 *.json
 
-# ===============================
-# OS / System
-# ===============================
+# OS
 .DS_Store
 *.pem
 
-# ===============================
-# Deployment
-# ===============================
-.vercel
+# Cache
 .cache/
-
-# ===============================
-# Temporary / Tooling
-# ===============================
-.emergent/
