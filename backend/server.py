@@ -37,7 +37,11 @@ def clean_dict(obj):
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-cred = credentials.Certificate(ROOT_DIR / "serviceAccountKey.json")
+firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+if not firebase_json:
+    raise RuntimeError("FIREBASE_SERVICE_ACCOUNT env variable not set")
+
+cred = credentials.Certificate(json.loads(firebase_json))
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
