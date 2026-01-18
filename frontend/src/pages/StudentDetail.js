@@ -22,7 +22,7 @@ const StudentDetail = () => {
   const [loading, setLoading] = useState(true);
   const [showAlertForm, setShowAlertForm] = useState(false);
   const [showInterventionForm, setShowInterventionForm] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('+91 9876543210');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [interventionType, setInterventionType] = useState('Counselling');
   const [interventionNotes, setInterventionNotes] = useState('');
 
@@ -36,6 +36,7 @@ const StudentDetail = () => {
       const response = await axios.get(`${API}/students/${studentId}`);
       setStudent(response.data.student);
       setInterventions(response.data.interventions || []);
+      setPhoneNumber(response.data.student.phone_number || '');
     } catch (error) {
       toast.error('Failed to fetch student details');
     } finally {
@@ -45,7 +46,16 @@ const StudentDetail = () => {
 
   const handleSendAlert = async () => {
     try {
+
+      if (!phoneNumber) {
+        toast.error('No phone number available for this student');
+        return;
+      }
       const risk = student.predicted_risk || student.dropout_risk;
+      if (!risk) {
+      toast.error('Risk prediction not available for this student');
+      return;
+    }
       const factors = student.risk_factors?.join(', ') || 'various risk factors';
       const message = `⚠️ Student ID ${studentId} is at ${risk} risk of dropout due to ${factors}.`;
 

@@ -33,7 +33,7 @@ const Dashboard = () => {
     );
   }
 
-  if (!stats?.has_data) {
+    if (!stats || stats.total_students === 0) {
     return (
       <div className="text-center py-20">
         <AlertTriangle className="mx-auto text-gray-400 mb-4" size={64} />

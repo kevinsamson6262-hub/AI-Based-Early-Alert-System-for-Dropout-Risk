@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
 
 const AppContext = createContext();
@@ -11,21 +11,31 @@ export const AppProvider = ({ children }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // ------------------------------------
+  // FETCH STUDENTS
+  // ------------------------------------
   const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get(`${API}/students`);
-      setStudents(response.data.students || []);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching students:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setLoading(true);
+    console.log("Fetching students from:", `${API}/students`);
 
-  const fetchStats = async () => {
+    const res = await axios.get(`${API}/students`);
+
+    console.log("API RESPONSE:", res.data);
+
+    setStudents(res.data.students || []);
+  } catch (error) {
+    console.error('Failed to fetch students', error);
+    setStudents([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // ------------------------------------
+  // FETCH STATS
+  // ------------------------------------
+  const fetchStats = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/stats`);
       setStats(response.data);
@@ -34,9 +44,12 @@ export const AppProvider = ({ children }) => {
       console.error('Error fetching stats:', error);
       throw error;
     }
-  };
+  }, []);
 
-  const fetchModelMetrics = async () => {
+  // ------------------------------------
+  // FETCH MODEL METRICS
+  // ------------------------------------
+  const fetchModelMetrics = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/model/metrics`);
       setModelMetrics(response.data);
@@ -45,13 +58,19 @@ export const AppProvider = ({ children }) => {
       console.error('Error fetching metrics:', error);
       throw error;
     }
-  };
+  }, []);
 
+  // ------------------------------------
+  // GENERATE DATASET
+  // ------------------------------------
   const generateDataset = async (nSamples = 150) => {
     try {
       setLoading(true);
-      const response = await axios.post(`${API}/dataset/generate?n_samples=${nSamples}`);
+      const response = await axios.post(
+        `${API}/dataset/generate?n_samples=${nSamples}`
+      );
       await fetchStudents();
+      await fetchStats();
       return response.data;
     } catch (error) {
       console.error('Error generating dataset:', error);
@@ -61,6 +80,9 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ------------------------------------
+  // TRAIN MODEL
+  // ------------------------------------
   const trainModel = async () => {
     try {
       setLoading(true);
@@ -75,6 +97,9 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ------------------------------------
+  // BATCH PREDICTION
+  // ------------------------------------
   const predictBatch = async () => {
     try {
       setLoading(true);
@@ -90,6 +115,26 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ------------------------------------
+  // ADD STUDENT
+  // ------------------------------------
+  const addStudent = async (studentData) => {
+    try {
+      setLoading(true);
+      const response = await axios.post(`${API}/students`, studentData);
+      await fetchStudents();
+      return response.data;
+    } catch (error) {
+      console.error('Error adding student:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ------------------------------------
+  // SEND ALERT
+  // ------------------------------------
   const sendAlert = async (alertData) => {
     try {
       const response = await axios.post(`${API}/alerts/send`, alertData);
@@ -100,6 +145,9 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ------------------------------------
+  // CREATE INTERVENTION
+  // ------------------------------------
   const createIntervention = async (interventionData) => {
     try {
       const response = await axios.post(`${API}/interventions`, interventionData);
@@ -110,6 +158,9 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ------------------------------------
+  // CONTEXT VALUE
+  // ------------------------------------
   const value = {
     students,
     modelMetrics,
@@ -121,11 +172,16 @@ export const AppProvider = ({ children }) => {
     generateDataset,
     trainModel,
     predictBatch,
+    addStudent,
     sendAlert,
     createIntervention
   };
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+    </AppContext.Provider>
+  );
 };
 
 export const useApp = () => {
