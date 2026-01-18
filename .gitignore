@@ -1,0 +1,49 @@
+# ===============================
+# IDE & Editors
+# ===============================
+.idea/
+.vscode/
+
+# ===============================
+# Environment & Secrets
+# ===============================
+.env
+frontend/.env
+backend/.env
+serviceAccountKey.json
+*credentials.json*
+*token.json*
+
+# ===============================
+# Node / Frontend
+# ===============================
+node_modules/
+frontend/node_modules/
+dist/
+build/
+coverage/
+frontend/package-lock.json
+frontend/yarn.lock
+yarn.lock
+
+# ===============================
+# Python / Backend
+# ===============================
+__pycache__/
+*.pyc
+*.pkl
+venv/
+.venv/
+
+# ===============================
+# Data & Generated files
+# ===============================
+*.csv
+*.json
+
+# ===============================
+# OS / Cache
+# ===============================
+.DS_Store
+*.pem
+.cache/
