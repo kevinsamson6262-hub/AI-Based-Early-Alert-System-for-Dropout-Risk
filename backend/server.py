@@ -1,308 +1,390 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
+from dotenv import load_dotenv
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Optional
-import uuid
+from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime, timezone
+from sms_service import send_sms
 import pandas as pd
-import io
+import json
+import os
+import uuid
+
+# Firebase
+import firebase_admin
+from firebase_admin import credentials, firestore
+
 from ml_model import DropoutPredictor
+import math
 
+def clean_nan(value):
+    if isinstance(value, float) and math.isnan(value):
+        return 0.0
+    return value
+
+def clean_dict(obj):
+    if isinstance(obj, dict):
+        return {k: clean_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [clean_dict(v) for v in obj]
+    return clean_nan(obj)
+
+# -------------------------------------------------
+# INIT
+# -------------------------------------------------
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+cred = credentials.Certificate(ROOT_DIR / "serviceAccountKey.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+MODEL_PATH = ROOT_DIR / "dropout_model.pkl"
 predictor = DropoutPredictor()
-predictor.load_model()
+predictor.load_model(str(MODEL_PATH))
 
+MODEL_METRICS = None
+
+# -------------------------------------------------
+# SCHEMA
+# -------------------------------------------------
 class StudentData(BaseModel):
+    phone_number: Optional[str] = None
     student_id: Optional[str] = None
     age: int
     attendance_percentage: float
     average_marks: float
     absences_per_month: int
+    distance_to_school_km: float
     family_income_level: str
     parents_education_level: str
-    distance_to_school_km: float
     health_issues: str
+    child_labor: int = 0
+    has_sibling_dropout: int = 0
 
-class AlertRequest(BaseModel):
+# -------------------------------------------------
+# DATASET GENERATION
+# -------------------------------------------------
+@api_router.post("/dataset/generate")
+async def generate_dataset(n_samples: int = 150):
+    df = predictor.generate_synthetic_data(n_samples)
+
+    for _, row in df.iterrows():
+        record = row.to_dict()
+        record["created_at"] = datetime.now(timezone.utc).isoformat()
+
+        # SAVE ONLY FOR TRAINING
+        db.collection("training_students").document(
+            record["student_id"]
+        ).set(record)
+
+    return {
+        "message": "Training dataset generated",
+        "total_students": n_samples
+    }
+
+# -------------------------------------------------
+# TRAIN MODEL
+# -------------------------------------------------
+@api_router.post("/model/train")
+async def train_model():
+    global MODEL_METRICS
+
+    docs = db.collection("training_students").stream()
+    students = [doc.to_dict() for doc in docs]
+
+    if not students:
+        raise HTTPException(400, "No training data found")
+
+    df = pd.DataFrame(students)
+
+    raw_metrics = predictor.train_model(df)
+
+    # 🔥 CLEAN EVERYTHING (deep clean)
+    MODEL_METRICS = clean_dict(raw_metrics)
+
+    predictor.save_model(str(MODEL_PATH))
+
+    return Response(
+        content=json.dumps({
+            "message": "Model trained successfully",
+            "metrics": MODEL_METRICS
+        }),
+        media_type="application/json"
+    )
+
+@api_router.get("/alerts")
+async def get_alerts():
+    alerts_ref = db.collection("alerts").stream()
+
+    alerts = []
+    for doc in alerts_ref:
+        data = doc.to_dict()
+        data["id"] = doc.id   # needed for React key
+        alerts.append(data)
+
+    return {
+        "total": len(alerts),
+        "alerts": alerts
+    }
+
+# -------------------------------------------------
+# GET MODEL METRICS
+# -------------------------------------------------
+@api_router.get("/model/metrics")
+async def get_model_metrics():
+    if MODEL_METRICS is None:
+        raise HTTPException(404, "Model has not been trained yet")
+
+    return Response(
+        content=json.dumps(clean_dict(MODEL_METRICS)),
+        media_type="application/json"
+    )
+
+@api_router.get("/students")
+async def get_students():
+    predictions = {
+        doc.id: doc.to_dict()
+        for doc in db.collection("predictions").stream()
+    }
+
+    students = [doc.to_dict() for doc in db.collection("students").stream()]
+    merged = []
+
+    for s in students:
+        sid = s.get("student_id")
+        if sid in predictions:
+            merged.append({**s, **predictions[sid]})
+        else:
+            merged.append(s)
+
+    # 🔥 CLEAN NaN VALUES
+    cleaned_students = []
+    for s in merged:
+        cleaned_students.append({
+            k: clean_nan(v) for k, v in s.items()
+        })
+
+    return {
+        "total_students": len(cleaned_students),
+        "students": cleaned_students
+    }
+
+# -------------------------------------------------
+# ADD STUDENT (MANUAL)
+# -------------------------------------------------
+@api_router.post("/students")
+async def add_student(student: StudentData):
+    try:
+        student_id = student.student_id or f"STU{uuid.uuid4().hex[:6]}"
+
+        record = {
+            **student.model_dump(),
+            "student_id": student_id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        db.collection("students").document(student_id).set(record)
+
+        return {
+            "message": "Student added successfully",
+            "student_id": student_id
+        }
+
+    except Exception as e:
+        print("❌ Add student error:", e)
+        raise HTTPException(status_code=500, detail="Failed to add student")
+
+@api_router.get("/students/{student_id}")
+async def get_student_detail(student_id: str):
+    # Get student base data
+    student_doc = db.collection("students").document(student_id).get()
+    if not student_doc.exists:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    student = student_doc.to_dict()
+
+    # Get prediction (if exists)
+    pred_doc = db.collection("predictions").document(student_id).get()
+    if pred_doc.exists:
+        student.update(pred_doc.to_dict())
+
+    # Get interventions
+    interventions = [
+        doc.to_dict()
+        for doc in db.collection("interventions")
+        .where("student_id", "==", student_id)
+        .stream()
+    ]
+
+    return {
+        "student": student,
+        "interventions": interventions
+    }
+
+
+@api_router.get("/stats")
+async def get_stats():
+    # Prefer predictions if available
+    predictions = [doc.to_dict() for doc in db.collection("predictions").stream()]
+
+    if predictions:
+        df = pd.DataFrame(predictions)
+
+        risk_counts = df["predicted_risk"].value_counts().to_dict()
+
+        return Response(
+            content=json.dumps({
+                "total_students": len(df),
+                "risk_distribution": {
+                    "High": risk_counts.get("High", 0),
+                    "Medium": risk_counts.get("Medium", 0),
+                    "Low": risk_counts.get("Low", 0)
+                },
+                "average_attendance": float(df["attendance_percentage"].mean()),
+                "average_marks": float(df["average_marks"].mean()),
+                "has_predictions": True
+            }),
+            media_type="application/json"
+        )
+
+    # Fallback → students only
+    students = [doc.to_dict() for doc in db.collection("students").stream()]
+
+    if not students:
+        return Response(
+            content=json.dumps({
+                "total_students": 0,
+                "risk_distribution": {"High": 0, "Medium": 0, "Low": 0},
+                "average_attendance": 0,
+                "average_marks": 0,
+                "has_predictions": False
+            }),
+            media_type="application/json"
+        )
+
+    df = pd.DataFrame(students)
+
+    return Response(
+        content=json.dumps({
+            "total_students": len(df),
+            "risk_distribution": {"High": 0, "Medium": 0, "Low": 0},
+            "average_attendance": float(df["attendance_percentage"].mean()),
+            "average_marks": float(df["average_marks"].mean()),
+            "has_predictions": False
+        }),
+        media_type="application/json"
+    )
+# -------------------------------------------------
+# SINGLE PREDICTION
+# -------------------------------------------------
+@api_router.post("/predict")
+async def predict(student: StudentData):
+    if predictor.model is None:
+        raise HTTPException(400, "Model not trained")
+
+    result = predictor.predict_single(student.model_dump())
+
+    return Response(
+        content=json.dumps(result),
+        media_type="application/json"
+    )
+
+# -------------------------------------------------
+# BATCH PREDICTION (GENERATE BUTTON)
+# -------------------------------------------------
+@api_router.post("/predict/batch")
+async def predict_batch():
+    if predictor.model is None:
+        raise HTTPException(400, "Model not trained")
+
+    students = [doc.to_dict() for doc in db.collection("students").stream()]
+
+    if not students:
+        raise HTTPException(400, "No students found")
+
+    for s in students:
+        result = predictor.predict_single(s)
+
+        record = {
+            **s,
+            **result,
+            "predicted_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        db.collection("predictions").document(s["student_id"]).set(record)
+
+    return {
+        "message": "Predictions generated",
+        "total_predictions": len(students)
+    }
+
+class AlertData(BaseModel):
     student_id: str
     risk_level: str
     phone_number: str
     message: str
 
-class InterventionCreate(BaseModel):
-    student_id: str
-    intervention_type: str
-    notes: Optional[str] = None
-
-class InterventionResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    student_id: str
-    intervention_type: str
-    notes: Optional[str] = None
-    created_at: str
-
-@api_router.get("/")
-async def root():
-    return {"message": "AI Dropout Risk Predictor API"}
-
-@api_router.post("/dataset/generate")
-async def generate_dataset(n_samples: int = 150):
-    """Generate synthetic student dataset"""
-    try:
-        df = predictor.generate_synthetic_data(n_samples)
-        
-        students_data = df.to_dict('records')
-        await db.students.delete_many({})
-        await db.students.insert_many(students_data)
-        
-        return {
-            "message": f"Generated {n_samples} student records",
-            "sample_data": df.head(5).to_dict('records'),
-            "total_records": len(df)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/model/train")
-async def train_model():
-    """Train the ML model on current dataset"""
-    try:
-        students = await db.students.find({}, {"_id": 0}).to_list(1000)
-        
-        if not students:
-            raise HTTPException(status_code=400, detail="No dataset available. Please generate or upload data first.")
-        
-        df = pd.DataFrame(students)
-        
-        metrics = predictor.train_model(df)
-        predictor.save_model()
-        
-        return {
-            "message": "Model trained successfully",
-            "metrics": metrics
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/predict")
-async def predict_risk(student: StudentData):
-    """Predict dropout risk for a student"""
-    try:
-        if predictor.model is None:
-            raise HTTPException(status_code=400, detail="Model not trained yet. Please train the model first.")
-        
-        prediction = predictor.predict_single(student.model_dump())
-        
-        return prediction
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/predict/batch")
-async def predict_batch():
-    """Predict risk for all students in database"""
-    try:
-        if predictor.model is None:
-            raise HTTPException(status_code=400, detail="Model not trained yet")
-        
-        students = await db.students.find({}, {"_id": 0}).to_list(1000)
-        
-        predictions = []
-        for student in students:
-            pred = predictor.predict_single(student)
-            predictions.append({**student, **pred})
-        
-        await db.predictions.delete_many({})
-        await db.predictions.insert_many(predictions)
-        
-        return {
-            "message": "Batch prediction completed",
-            "total_predictions": len(predictions),
-            "predictions": predictions
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/students")
-async def get_students():
-    """Get all students with predictions"""
-    try:
-        predictions = await db.predictions.find({}, {"_id": 0}).to_list(1000)
-        
-        if not predictions:
-            students = await db.students.find({}, {"_id": 0}).to_list(1000)
-            return {
-                "students": students,
-                "has_predictions": False
-            }
-        
-        return {
-            "students": predictions,
-            "has_predictions": True
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/students/{student_id}")
-async def get_student(student_id: str):
-    """Get specific student details"""
-    try:
-        student = await db.predictions.find_one({"student_id": student_id}, {"_id": 0})
-        
-        if not student:
-            student = await db.students.find_one({"student_id": student_id}, {"_id": 0})
-        
-        if not student:
-            raise HTTPException(status_code=404, detail="Student not found")
-        
-        interventions = await db.interventions.find({"student_id": student_id}, {"_id": 0}).to_list(100)
-        
-        return {
-            "student": student,
-            "interventions": interventions
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/model/metrics")
-async def get_model_metrics():
-    """Get model performance metrics"""
-    try:
-        if predictor.model is None:
-            raise HTTPException(status_code=400, detail="Model not trained yet")
-        
-        return {
-            "accuracy": predictor.accuracy,
-            "confusion_matrix": predictor.confusion_matrix,
-            "feature_importance": predictor.feature_importance
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/alerts/send")
-async def send_alert(alert: AlertRequest):
-    """Simulate sending an alert"""
-    try:
-        alert_doc = {
-            "id": str(uuid.uuid4()),
-            "student_id": alert.student_id,
-            "risk_level": alert.risk_level,
-            "phone_number": alert.phone_number,
-            "message": alert.message,
-            "sent_at": datetime.now(timezone.utc).isoformat(),
-            "status": "sent"
-        }
-        
-        await db.alerts.insert_one(alert_doc)
-        
-        return {
-            "message": "Alert sent successfully (simulated)",
-            "alert": {k: v for k, v in alert_doc.items() if k != '_id'}
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def send_alert(alert: dict):
+    alert["created_at"] = datetime.now(timezone.utc).isoformat()
 
-@api_router.get("/alerts")
-async def get_alerts():
-    """Get all sent alerts"""
-    try:
-        alerts = await db.alerts.find({}, {"_id": 0}).to_list(1000)
-        return {"alerts": alerts}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Send SMS via Twilio
+    sms_result = send_sms(
+        alert["phone_number"],
+        alert["message"]
+    )
+
+    # Save alert + SMS status
+    alert["sms_status"] = sms_result["status"]
+    alert["sms_sid"] = sms_result["sid"]
+
+    db.collection("alerts").add(alert)
+
+    return {
+        "status": "success",
+        "sms": sms_result
+    }
+
+
+class InterventionData(BaseModel):
+    student_id: str
+    intervention_type: str
+    notes: Optional[str] = None
+
 
 @api_router.post("/interventions")
-async def create_intervention(intervention: InterventionCreate):
-    """Create an intervention record"""
+async def create_intervention(intervention: InterventionData):
     try:
-        intervention_doc = {
-            "id": str(uuid.uuid4()),
-            "student_id": intervention.student_id,
-            "intervention_type": intervention.intervention_type,
-            "notes": intervention.notes,
+        record = {
+            **intervention.dict(),
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-        
-        await db.interventions.insert_one(intervention_doc)
-        
-        return {
-            "message": "Intervention recorded",
-            "intervention": {k: v for k, v in intervention_doc.items() if k != '_id'}
-        }
+
+        db.collection("interventions").add(record)
+
+        return {"message": "Intervention recorded"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/interventions/{student_id}")
-async def get_interventions(student_id: str):
-    """Get interventions for a student"""
-    try:
-        interventions = await db.interventions.find({"student_id": student_id}, {"_id": 0}).to_list(100)
-        return {"interventions": interventions}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/stats")
-async def get_stats():
-    """Get overall statistics"""
-    try:
-        predictions = await db.predictions.find({}, {"_id": 0}).to_list(1000)
-        
-        if not predictions:
-            return {
-                "total_students": 0,
-                "risk_distribution": {"High": 0, "Medium": 0, "Low": 0},
-                "has_data": False
-            }
-        
-        df = pd.DataFrame(predictions)
-        
-        risk_counts = df['predicted_risk'].value_counts().to_dict() if 'predicted_risk' in df.columns else df['dropout_risk'].value_counts().to_dict()
-        
-        return {
-            "total_students": len(predictions),
-            "risk_distribution": risk_counts,
-            "has_data": True,
-            "average_attendance": float(df['attendance_percentage'].mean()) if 'attendance_percentage' in df.columns else 0,
-            "average_marks": float(df['average_marks'].mean()) if 'average_marks' in df.columns else 0
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+@api_router.get("/training/count")
+async def training_count():
+    count = len(list(db.collection("training_students").stream()))
+    return {"count": count}
+# -------------------------------------------------
+# APP CONFIG
+# -------------------------------------------------
 app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

@@ -10,7 +10,7 @@ serviceAccountKey.json
 *credentials.json*
 *token.json*
 
-# Node
+# Node / Frontend
 node_modules/
 frontend/node_modules/
 dist/
@@ -20,14 +20,14 @@ frontend/package-lock.json
 frontend/yarn.lock
 yarn.lock
 
-# Python
+# Python / Backend
 __pycache__/
 *.pyc
 *.pkl
 venv/
 .venv/
 
-# Data
+# Data files
 *.csv
 *.json
 
